@@ -1,0 +1,414 @@
+# Compliance Checker Agent Configuration
+# GitLab Duo Agent Platform
+
+name: compliance-checker
+version: 1.0.0
+description: |
+  AI-powered compliance verification using Claude.
+  Checks code and practices against GDPR, SOC2, HIPAA, and custom frameworks.
+
+author: decentrathai
+license: MIT
+tags:
+  - compliance
+  - gdpr
+  - soc2
+  - hipaa
+  - audit
+
+# Triggers
+triggers:
+  # On-demand compliance check
+  - type: manual
+    enabled: true
+    
+  # Before release
+  - type: tag_created
+    conditions:
+      - tag_pattern: "v*"
+      - tag_pattern: "release-*"
+      
+  # Scheduled audits
+  - type: scheduled
+    cron: "0 0 * * 0"  # Weekly on Sunday
+    
+  # On merge to protected branches
+  - type: merge_request_merged
+    conditions:
+      - target_branch: main
+      - target_branch: production
+
+# Context
+context:
+  # Full repository access for compliance audit
+  - type: repository_files
+    scope: all_branches
+    include:
+      - "**/*.py"
+      - "**/*.js"
+      - "**/*.java"
+      - "**/*.go"
+      - "**/*.rb"
+      - "**/*.php"
+      - "**/README.md"
+      - "**/LICENSE"
+      - "**/PRIVACY.md"
+      - "**/SECURITY.md"
+      - "**/.gitlab-ci.yml"
+      - "**/docker-compose.yml"
+      - "**/Dockerfile"
+      
+  # Project settings and metadata
+  - type: project_settings
+    include:
+      - description
+      - visibility
+      - approvals
+      - protected_branches
+      - security_settings
+      - access_tokens
+      
+  # Audit logs
+  - type: audit_logs
+    events:
+      - access_granted
+      - access_revoked
+      - security_settings_changed
+      - data_export
+      
+  # Previous compliance reports
+  - type: custom_data
+    source: compliance_history
+    limit: 12  # Last year
+
+# Tools
+tools:
+  - name: file_reader
+    enabled: true
+    
+  # Compliance frameworks database
+  - name: compliance_frameworks
+    enabled: true
+    frameworks:
+      - gdpr
+      - soc2
+      - hipaa
+      - pci-dss
+      - iso27001
+      - ccpa
+      
+  # GitLab API
+  - name: gitlab_api
+    enabled: true
+    permissions:
+      - read_project
+      - read_audit_logs
+      - create_issue
+      - create_wiki_page
+      
+  # Document generator
+  - name: document_generator
+    enabled: true
+    formats:
+      - markdown
+      - pdf
+      - html
+      
+  # Claude AI for compliance interpretation
+  - name: anthropic_claude
+    enabled: true
+    model: claude-3-5-sonnet-20241022
+    parameters:
+      temperature: 0.1  # Low temperature for consistent compliance
+      max_tokens: 8000
+      system_prompt: |
+        You are a compliance expert specializing in software development regulations.
+        Analyze code and development practices for compliance with:
+        - GDPR (data privacy)
+        - SOC2 (security controls)
+        - HIPAA (healthcare data)
+        - Custom compliance frameworks
+        
+        Provide:
+        1. Clear compliance status (compliant/non-compliant/partial)
+        2. Specific violations found
+        3. Required remediation actions
+        4. Evidence and documentation needs
+        5. Risk assessment
+        
+        Use precise, legal language while remaining developer-friendly.
+
+# Compliance frameworks configuration
+compliance_frameworks:
+  gdpr:
+    enabled: true
+    requirements:
+      - name: "Data Protection by Design"
+        article: "Article 25"
+        checks:
+          - encryption_at_rest
+          - encryption_in_transit
+          - data_minimization
+          - anonymization
+          
+      - name: "Right to be Forgotten"
+        article: "Article 17"
+        checks:
+          - data_deletion_capability
+          - backup_deletion
+          - third_party_notification
+          
+      - name: "Data Breach Notification"
+        article: "Article 33"
+        checks:
+          - breach_detection_logging
+          - notification_procedures
+          - incident_response_plan
+          
+      - name: "Consent Management"
+        article: "Article 7"
+        checks:
+          - explicit_consent_collection
+          - consent_withdrawal
+          - consent_records
+          
+      - name: "Privacy by Default"
+        article: "Article 25"
+        checks:
+          - minimal_data_collection
+          - default_privacy_settings
+          - data_access_controls
+          
+  soc2:
+    enabled: true
+    trust_service_criteria:
+      - name: "Security (Common Criteria)"
+        controls:
+          - access_controls
+          - logical_access
+          - encryption
+          - monitoring_logging
+          
+      - name: "Availability"
+        controls:
+          - system_monitoring
+          - incident_response
+          - backup_recovery
+          
+      - name: "Confidentiality"
+        controls:
+          - data_classification
+          - encryption_controls
+          - secure_disposal
+          
+  hipaa:
+    enabled: true
+    requirements:
+      - name: "Access Controls"
+        section: "164.312(a)(1)"
+        checks:
+          - unique_user_ids
+          - emergency_access
+          - automatic_logoff
+          - encryption_decryption
+          
+      - name: "Audit Controls"
+        section: "164.312(b)"
+        checks:
+          - activity_logging
+          - audit_trails
+          - log_retention
+          
+      - name: "Integrity Controls"
+        section: "164.312(c)(1)"
+        checks:
+          - data_integrity_verification
+          - authentication
+          
+      - name: "Transmission Security"
+        section: "164.312(e)(1)"
+        checks:
+          - encryption_in_transit
+          - integrity_controls
+
+# Workflow
+workflow:
+  steps:
+    # Step 1: Identify applicable frameworks
+    - name: identify_frameworks
+      action: detect_compliance_requirements
+      inputs:
+        - project_description
+        - code_analysis
+      outputs:
+        - applicable_frameworks
+        
+    # Step 2: Collect evidence
+    - name: collect_evidence
+      action: gather_compliance_data
+      inputs:
+        - repository_files
+        - audit_logs
+        - project_settings
+      outputs:
+        - evidence_package
+        
+    # Step 3: Run automated checks
+    - name: automated_checks
+      action: run_compliance_rules
+      inputs:
+        - evidence_package
+        - applicable_frameworks
+      outputs:
+        - automated_results
+        
+    # Step 4: AI-powered compliance analysis
+    - name: ai_compliance_review
+      action: claude_analyze
+      inputs:
+        - automated_results
+        - code_samples
+        - documentation
+      prompt: |
+        Review this project for compliance with {frameworks}.
+        
+        Code and configuration:
+        {code_samples}
+        
+        Automated check results:
+        {automated_results}
+        
+        Documentation:
+        {documentation}
+        
+        For each framework, determine:
+        1. Overall compliance status (compliant/partial/non-compliant)
+        2. Specific requirements met or violated
+        3. Evidence supporting the determination
+        4. Gaps that need to be addressed
+        5. Risk level of any violations
+        6. Recommended remediation actions
+        
+        Provide a detailed compliance report with actionable steps.
+      outputs:
+        - compliance_assessment
+        
+    # Step 5: Generate compliance report
+    - name: create_compliance_report
+      action: format_report
+      inputs:
+        - compliance_assessment
+        - evidence_package
+      template: compliance_report
+      outputs:
+        - compliance_report
+        
+    # Step 6: Create documentation
+    - name: generate_documentation
+      action: create_compliance_docs
+      inputs:
+        - compliance_report
+      outputs:
+        - privacy_policy
+        - security_documentation
+        - audit_trail
+        
+    # Step 7: Post results
+    - name: post_results
+      action: create_wiki_page
+      inputs:
+        - compliance_report
+        - compliance_documentation
+      page: "Compliance/Audit-{date}"
+      
+    # Step 8: Create issues for violations
+    - name: create_remediation_issues
+      action: create_gitlab_issue
+      inputs:
+        - violations
+      conditions:
+        - violation_severity: high
+        - violation_severity: critical
+      template: compliance_issue
+      labels:
+        - compliance
+        - security
+        - priority:high
+
+# Report templates
+templates:
+  compliance_report:
+    format: markdown
+    sections:
+      - executive_summary
+      - framework_by_framework_analysis
+      - violations_and_gaps
+      - remediation_plan
+      - evidence_appendix
+      
+  compliance_issue:
+    title: "Compliance Violation: {requirement_name}"
+    description: |
+      ## Compliance Framework
+      {framework} - {requirement_reference}
+      
+      ## Violation
+      {violation_description}
+      
+      ## Risk Level
+      {risk_level}
+      
+      ## Required Actions
+      {remediation_steps}
+      
+      ## Evidence
+      {evidence_links}
+      
+      ## Deadline
+      {deadline}
+    labels:
+      - compliance
+      - {framework}
+      - priority:{risk_level}
+
+# Behavior
+behavior:
+  # Compliance checking strictness
+  strictness: balanced  # strict, balanced, or lenient
+  
+  # AI features
+  ai_features:
+    - natural_language_rule_interpretation
+    - context_aware_compliance_checking
+    - gap_analysis
+    - remediation_planning
+    - documentation_generation
+    
+  # Reporting
+  reporting:
+    create_wiki_page: true
+    create_issues: true
+    send_notification: true
+    generate_pdf: true
+    
+  # Learning
+  learning:
+    enabled: true
+    track_compliance_improvements: true
+    learn_custom_requirements: true
+
+# Performance
+performance:
+  timeout: 600  # 10 minutes for full audit
+  max_files: 5000
+  parallel_execution: true
+  cache_results: true
+
+# Security
+security:
+  redact_pii: true
+  encrypt_reports: true
+  retention:
+    compliance_reports: 7y  # 7 years for audit
+    evidence: 7y
+    logs: 90d

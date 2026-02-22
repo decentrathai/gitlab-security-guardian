@@ -1,0 +1,498 @@
+# Auto-Remediation Agent Configuration
+# GitLab Duo Agent Platform
+
+name: auto-remediation
+version: 1.0.0
+description: |
+  AI-powered security fix generation using Claude.
+  Automatically generates and applies security fixes with intelligent context awareness.
+
+author: decentrathai
+license: MIT
+tags:
+  - remediation
+  - auto-fix
+  - security
+  - claude
+
+# Triggers
+triggers:
+  # After security scan completes
+  - type: custom_event
+    event: security_scan_complete
+    conditions:
+      - findings_severity: high
+      - findings_severity: critical
+      
+  # Manual trigger for fix generation
+  - type: manual
+    enabled: true
+    
+  # Scheduled fix sessions
+  - type: scheduled
+    cron: "0 3 * * 1"  # Monday at 3 AM
+    conditions:
+      - pending_fixes_count > 0
+
+# Context
+context:
+  # Security scan results
+  - type: custom_data
+    source: security_scan_results
+    include:
+      - vulnerabilities
+      - severity
+      - affected_files
+      - line_numbers
+      
+  # Repository files
+  - type: repository_files
+    scope: current_branch
+    include_all: true
+    
+  # Coding standards and patterns
+  - type: custom_data
+    source: coding_standards
+    include:
+      - style_guide
+      - best_practices
+      - team_patterns
+      
+  # Previous fixes (for learning)
+  - type: custom_data
+    source: fix_history
+    limit: 50
+    
+  # Project dependencies and frameworks
+  - type: project_dependencies
+    include:
+      - framework_version
+      - security_patches
+
+# Tools
+tools:
+  # File operations
+  - name: file_writer
+    enabled: true
+    permissions:
+      - read_file
+      - write_file
+      - create_file
+      
+  # Git operations
+  - name: git_operations
+    enabled: true
+    permissions:
+      - create_branch
+      - commit_changes
+      - create_merge_request
+      
+  # GitLab API
+  - name: gitlab_api
+    enabled: true
+    permissions:
+      - read_project
+      - create_merge_request
+      - add_comment
+      - request_review
+      
+  # Code analysis
+  - name: code_analyzer
+    enabled: true
+    capabilities:
+      - ast_parsing
+      - dependency_resolution
+      - type_inference
+      
+  # Testing framework
+  - name: test_runner
+    enabled: true
+    frameworks:
+      - pytest
+      - jest
+      - junit
+      - rspec
+      
+  # Claude AI for fix generation
+  - name: anthropic_claude
+    enabled: true
+    model: claude-3-5-sonnet-20241022
+    parameters:
+      temperature: 0.3  # Slightly higher for creative fixes
+      max_tokens: 8000
+      system_prompt: |
+        You are an expert software engineer specializing in security fixes.
+        Generate secure, production-ready code fixes that:
+        
+        1. Completely resolve the security vulnerability
+        2. Maintain code functionality and performance
+        3. Follow project coding standards
+        4. Include comprehensive explanations
+        5. Add security comments for future developers
+        6. Preserve backwards compatibility when possible
+        7. Include tests to verify the fix
+        
+        Provide fixes that are:
+        - Secure by design
+        - Easy to review
+        - Well-documented
+        - Tested and verified
+
+# Fix generation configuration
+fix_generation:
+  # Strategies for different vulnerability types
+  strategies:
+    sql_injection:
+      - use_parameterized_queries
+      - implement_orm
+      - add_input_validation
+      - escape_user_input
+      
+    xss:
+      - sanitize_output
+      - use_template_escaping
+      - implement_csp
+      - validate_input
+      
+    authentication:
+      - implement_secure_session
+      - add_mfa
+      - use_secure_password_hashing
+      - add_rate_limiting
+      
+    secrets_exposure:
+      - move_to_environment_variables
+      - use_secret_management
+      - add_to_gitignore
+      - rotate_exposed_secrets
+      
+    dependency_vulnerability:
+      - update_to_secure_version
+      - apply_security_patch
+      - find_alternative_package
+      - implement_workaround
+      
+  # Fix preferences
+  preferences:
+    prefer_minimal_changes: true
+    maintain_api_compatibility: true
+    add_security_comments: true
+    generate_tests: true
+    update_documentation: true
+
+# Workflow
+workflow:
+  steps:
+    # Step 1: Analyze vulnerabilities
+    - name: analyze_vulnerabilities
+      action: parse_scan_results
+      inputs:
+        - security_scan_results
+      outputs:
+        - vulnerability_list
+        - affected_files
+        
+    # Step 2: Prioritize fixes
+    - name: prioritize_fixes
+      action: rank_by_impact
+      inputs:
+        - vulnerability_list
+      criteria:
+        - severity
+        - exploitability
+        - business_impact
+        - fix_complexity
+      outputs:
+        - prioritized_fixes
+        
+    # Step 3: Load affected code
+    - name: load_code_context
+      action: read_files
+      inputs:
+        - affected_files
+      include:
+        - target_file
+        - related_files
+        - test_files
+        - documentation
+      outputs:
+        - code_context
+        
+    # Step 4: Generate fixes with Claude
+    - name: generate_fixes
+      action: claude_analyze
+      inputs:
+        - vulnerability_details
+        - code_context
+        - coding_standards
+      prompt: |
+        Generate a secure fix for this vulnerability:
+        
+        ## Vulnerability
+        Type: {vulnerability_type}
+        Severity: {severity}
+        Location: {file_path}:{line_number}
+        
+        ## Vulnerable Code
+        ```{language}
+        {vulnerable_code}
+        ```
+        
+        ## Context
+        {surrounding_code}
+        
+        ## Project Info
+        Framework: {framework}
+        Language: {language}
+        Dependencies: {dependencies}
+        
+        ## Coding Standards
+        {coding_standards}
+        
+        Generate:
+        1. Secure replacement code
+        2. Explanation of the fix
+        3. Why this approach is secure
+        4. Any additional security improvements
+        5. Test cases to verify the fix
+        6. Documentation updates needed
+        
+        Ensure the fix:
+        - Completely resolves the vulnerability
+        - Maintains existing functionality
+        - Follows project coding style
+        - Is production-ready
+        - Includes security comments
+      outputs:
+        - generated_fixes
+        
+    # Step 5: Validate fixes
+    - name: validate_fixes
+      action: run_validation
+      inputs:
+        - generated_fixes
+      validations:
+        - syntax_check
+        - lint_check
+        - security_scan
+        - test_execution
+      outputs:
+        - validated_fixes
+        
+    # Step 6: Create fix branch
+    - name: create_fix_branch
+      action: git_create_branch
+      inputs:
+        - base_branch
+      branch_name: "security-fix/{vulnerability_id}-{date}"
+      outputs:
+        - fix_branch
+        
+    # Step 7: Apply fixes
+    - name: apply_fixes
+      action: write_files
+      inputs:
+        - validated_fixes
+      outputs:
+        - modified_files
+        
+    # Step 8: Run tests
+    - name: run_tests
+      action: execute_tests
+      inputs:
+        - modified_files
+      test_types:
+        - unit_tests
+        - integration_tests
+        - security_tests
+      outputs:
+        - test_results
+        
+    # Step 9: Commit changes
+    - name: commit_fixes
+      action: git_commit
+      inputs:
+        - modified_files
+      message: |
+        fix: Security fix for {vulnerability_type}
+        
+        Resolves: {vulnerability_id}
+        Severity: {severity}
+        
+        Changes:
+        {change_summary}
+        
+        Security Impact:
+        {security_impact}
+        
+        Generated by GitLab Security Guardian
+      outputs:
+        - commit_sha
+        
+    # Step 10: Create merge request
+    - name: create_merge_request
+      action: create_gitlab_mr
+      inputs:
+        - fix_branch
+        - commit_sha
+      title: "🔒 Security Fix: {vulnerability_type}"
+      description: |
+        ## Security Fix
+        
+        **Vulnerability:** {vulnerability_type}
+        **Severity:** {severity}
+        **CWE:** {cwe_id}
+        
+        ## Changes Made
+        {fix_explanation}
+        
+        ## Before
+        ```{language}
+        {vulnerable_code}
+        ```
+        
+        ## After
+        ```{language}
+        {fixed_code}
+        ```
+        
+        ## Why This Fix is Secure
+        {security_rationale}
+        
+        ## Testing
+        {test_results}
+        
+        ## Additional Security Improvements
+        {additional_improvements}
+        
+        ## Review Checklist
+        - [ ] Fix resolves the vulnerability
+        - [ ] Tests pass
+        - [ ] No functionality broken
+        - [ ] Security best practices followed
+        - [ ] Documentation updated
+        
+        ---
+        
+        🤖 Auto-generated by GitLab Security Guardian using Claude AI
+      labels:
+        - security
+        - auto-fix
+        - {severity}
+      assignees:
+        - {code_owner}
+      reviewers:
+        - {security_team}
+      outputs:
+        - merge_request_url
+        
+    # Step 11: Add detailed comment
+    - name: add_fix_details
+      action: create_mr_comment
+      inputs:
+        - merge_request_url
+        - fix_details
+      comment: |
+        ## Fix Analysis
+        
+        ### Vulnerability Details
+        {vulnerability_details}
+        
+        ### Fix Strategy
+        {fix_strategy}
+        
+        ### Code Changes
+        {code_changes_explanation}
+        
+        ### Security Considerations
+        {security_considerations}
+        
+        ### Testing
+        ✅ All tests passing
+        ✅ Security scan clean
+        ✅ Linting passed
+        
+        ### Recommendations
+        {additional_recommendations}
+
+# Behavior
+behavior:
+  # Auto-apply settings
+  auto_apply:
+    enabled: false  # Require manual approval by default
+    allow_for_severities:
+      - low
+      - medium
+    require_approval_for:
+      - high
+      - critical
+    require_tests: true
+    
+  # Fix quality standards
+  quality:
+    minimum_test_coverage: 80
+    require_documentation: true
+    follow_coding_standards: true
+    security_scan_clean: true
+    
+  # AI features
+  ai_features:
+    - context_aware_fixing
+    - multi_file_refactoring
+    - pattern_recognition
+    - learning_from_feedback
+    - security_best_practices
+    
+  # Reporting
+  reporting:
+    create_merge_request: true
+    add_detailed_comments: true
+    notify_team: true
+    update_security_dashboard: true
+    
+  # Learning
+  learning:
+    enabled: true
+    track_successful_fixes: true
+    learn_team_preferences: true
+    improve_fix_quality: true
+
+# Validation rules
+validation:
+  required_checks:
+    - syntax_valid
+    - tests_pass
+    - security_scan_clean
+    - no_new_vulnerabilities
+    - coding_standards_met
+    
+  optional_checks:
+    - performance_not_degraded
+    - documentation_updated
+    - backwards_compatible
+
+# Performance
+performance:
+  timeout: 600  # 10 minutes per fix
+  max_fixes_per_run: 10
+  parallel_fix_generation: true
+  cache_fix_patterns: true
+
+# Security
+security:
+  # Never commit secrets
+  prevent_secret_commits: true
+  
+  # Verify fixes don't introduce new issues
+  verify_security: true
+  
+  # Permissions required
+  required_permissions:
+    - repository:write
+    - merge_request:create
+    
+  # Audit trail
+  log_all_fixes: true
+  retention:
+    fix_logs: 365d
+    fix_history: permanent

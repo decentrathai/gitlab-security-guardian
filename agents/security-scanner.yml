@@ -1,0 +1,333 @@
+# Security Scanner Agent Configuration
+# GitLab Duo Agent Platform
+
+name: security-scanner
+version: 1.0.0
+description: |
+  AI-powered security vulnerability detection using Claude.
+  Scans code for common vulnerabilities, dependencies, secrets, and IaC issues.
+
+# Agent metadata
+author: decentrathai
+license: MIT
+tags:
+  - security
+  - vulnerability
+  - static-analysis
+  - claude
+
+# Triggers - when this agent activates
+triggers:
+  # Activate on merge request events
+  - type: merge_request_created
+    conditions:
+      - target_branch: main
+      - target_branch: develop
+      
+  - type: merge_request_updated
+    conditions:
+      - files_changed: "*.py,*.js,*.java,*.go,*.rb,*.php"
+      
+  # Scheduled scans
+  - type: scheduled
+    cron: "0 2 * * *"  # Daily at 2 AM
+    
+  # Manual trigger
+  - type: manual
+    enabled: true
+
+# Context - what information the agent has access to
+context:
+  # Repository access
+  - type: repository_files
+    scope: current_branch
+    include:
+      - "**/*.py"
+      - "**/*.js"
+      - "**/*.java"
+      - "**/*.go"
+      - "**/*.rb"
+      - "**/*.php"
+      - "**/*.ts"
+      - "**/*.tsx"
+      - "**/requirements.txt"
+      - "**/package.json"
+      - "**/Gemfile"
+      - "**/go.mod"
+      - "**/*.tf"
+      - "**/*.yml"
+      - "**/*.yaml"
+    exclude:
+      - "**/node_modules/**"
+      - "**/vendor/**"
+      - "**/.git/**"
+      - "**/dist/**"
+      - "**/build/**"
+      
+  # Merge request context
+  - type: merge_request_diff
+    include_comments: true
+    
+  # Project dependencies
+  - type: project_dependencies
+    package_managers:
+      - npm
+      - pip
+      - maven
+      - go
+      - bundler
+      
+  # GitLab project settings
+  - type: project_settings
+    include:
+      - security_settings
+      - branch_protection
+      - approvals
+      
+  # Previous scan results (for learning)
+  - type: custom_data
+    source: previous_scans
+    limit: 10
+
+# Tools - what actions the agent can take
+tools:
+  # File reading
+  - name: file_reader
+    enabled: true
+    permissions:
+      - read_file
+      - list_directory
+      - get_file_metadata
+      
+  # Vulnerability databases
+  - name: vulnerability_database
+    enabled: true
+    sources:
+      - cve
+      - owasp_top_10
+      - cwe
+      - snyk
+      
+  # GitLab API access
+  - name: gitlab_api
+    enabled: true
+    permissions:
+      - read_project
+      - create_comment
+      - update_merge_request
+      - create_issue
+      
+  # Static analysis engine
+  - name: semgrep
+    enabled: true
+    rules:
+      - security
+      - owasp-top-10
+      - cwe-top-25
+      
+  # Secret detection
+  - name: secret_scanner
+    enabled: true
+    patterns:
+      - api_keys
+      - passwords
+      - tokens
+      - private_keys
+      - aws_credentials
+      
+  # Claude AI integration
+  - name: anthropic_claude
+    enabled: true
+    model: claude-3-5-sonnet-20241022
+    parameters:
+      temperature: 0.2
+      max_tokens: 4000
+      system_prompt: |
+        You are a security expert helping developers find and fix vulnerabilities.
+        Analyze code for security issues and provide:
+        1. Clear description of the vulnerability
+        2. Severity and risk assessment
+        3. Business impact explanation
+        4. Specific fix recommendations
+        5. Code examples of secure implementations
+        
+        Focus on practical, actionable guidance. Explain complex security 
+        concepts in developer-friendly language.
+
+# Agent behavior configuration
+behavior:
+  # Analysis settings
+  analysis:
+    severity_levels:
+      - critical
+      - high
+      - medium
+      - low
+      - info
+      
+    minimum_severity_report: medium
+    
+    # AI-powered features
+    ai_features:
+      - contextual_risk_assessment
+      - false_positive_reduction
+      - exploit_scenario_generation
+      - business_impact_analysis
+      - fix_recommendation
+      
+  # Reporting
+  reporting:
+    format: markdown
+    include:
+      - vulnerability_summary
+      - detailed_findings
+      - risk_matrix
+      - remediation_steps
+      - compliance_impact
+      
+    # Post results to
+    destinations:
+      - merge_request_comment
+      - security_dashboard
+      - slack_notification  # if configured
+      
+  # Learning and adaptation
+  learning:
+    enabled: true
+    track_false_positives: true
+    adapt_to_codebase: true
+    learn_from_feedback: true
+
+# Scanning workflow
+workflow:
+  steps:
+    # Step 1: Collect code and context
+    - name: collect_context
+      action: gather_files
+      inputs:
+        - merge_request_diff
+        - repository_files
+        - dependencies
+        
+    # Step 2: Run static analysis
+    - name: static_analysis
+      action: run_semgrep
+      inputs:
+        - collected_files
+      outputs:
+        - static_findings
+        
+    # Step 3: Check for secrets
+    - name: secret_detection
+      action: scan_secrets
+      inputs:
+        - collected_files
+      outputs:
+        - secret_findings
+        
+    # Step 4: Check dependencies
+    - name: dependency_scan
+      action: check_vulnerabilities
+      inputs:
+        - project_dependencies
+      outputs:
+        - dependency_findings
+        
+    # Step 5: AI analysis with Claude
+    - name: ai_analysis
+      action: claude_analyze
+      inputs:
+        - static_findings
+        - secret_findings
+        - dependency_findings
+        - code_context
+      prompt: |
+        Analyze these security findings in the context of this codebase.
+        
+        Code changes:
+        {merge_request_diff}
+        
+        Static analysis results:
+        {static_findings}
+        
+        Secret detection results:
+        {secret_findings}
+        
+        Dependency vulnerabilities:
+        {dependency_findings}
+        
+        For each finding:
+        1. Assess the actual risk in this context
+        2. Determine if it's a false positive
+        3. Explain the business impact
+        4. Provide specific fix recommendations
+        5. Rate severity: critical, high, medium, low, info
+        
+        Focus on issues that matter. Ignore noise.
+      outputs:
+        - ai_assessment
+        
+    # Step 6: Generate report
+    - name: create_report
+      action: format_report
+      inputs:
+        - ai_assessment
+      template: security_report
+      outputs:
+        - final_report
+        
+    # Step 7: Post results
+    - name: post_results
+      action: create_merge_request_comment
+      inputs:
+        - final_report
+      conditions:
+        - findings_count > 0
+        
+    # Step 8: Create issues for critical findings
+    - name: create_issues
+      action: create_gitlab_issue
+      inputs:
+        - critical_findings
+      conditions:
+        - severity: critical
+        - severity: high
+      template: security_issue
+
+# Error handling
+error_handling:
+  on_failure:
+    - log_error
+    - notify_team
+    - create_issue
+    
+  retry:
+    max_attempts: 3
+    backoff: exponential
+    
+  fallback:
+    - continue_with_partial_results
+
+# Performance settings
+performance:
+  timeout: 300  # 5 minutes
+  max_files: 1000
+  max_file_size: 1MB
+  parallel_execution: true
+  cache_results: true
+
+# Security and privacy
+security:
+  # Don't log sensitive data
+  redact_secrets: true
+  
+  # Permissions required
+  required_permissions:
+    - repository:read
+    - merge_request:comment
+    - issues:write
+    
+  # Data retention
+  retention:
+    scan_results: 90d
+    logs: 30d

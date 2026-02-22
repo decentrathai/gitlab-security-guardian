@@ -1,0 +1,616 @@
+# Security Pipeline Flow Configuration
+# GitLab Duo Agent Platform - Multi-Agent Orchestration
+
+name: security-pipeline
+version: 1.0.0
+description: |
+  Complete security and compliance automation pipeline.
+  Orchestrates Security Scanner, Compliance Checker, and Auto-Remediation agents
+  for end-to-end security workflow automation.
+
+author: decentrathai
+license: MIT
+tags:
+  - security
+  - compliance
+  - automation
+  - orchestration
+  - claude
+
+# Flow metadata
+flow_type: sequential_with_conditionals
+execution_mode: async
+max_duration: 1800  # 30 minutes
+
+# Triggers - when this flow activates
+triggers:
+  # Primary: On merge request
+  - type: merge_request_created
+    conditions:
+      - target_branch: main
+      - target_branch: develop
+      - target_branch: production
+      
+  - type: merge_request_updated
+    conditions:
+      - files_changed: "**/*.{py,js,java,go,rb,php,ts,tsx}"
+      
+  # On release preparation
+  - type: tag_created
+    conditions:
+      - tag_pattern: "v*"
+      - tag_pattern: "release-*"
+      
+  # Scheduled full audits
+  - type: scheduled
+    cron: "0 2 * * 1"  # Monday at 2 AM
+    
+  # Manual execution
+  - type: manual
+    enabled: true
+
+# Agents involved in this flow
+agents:
+  security_scanner:
+    agent: security-scanner
+    version: ">=1.0.0"
+    required: true
+    
+  compliance_checker:
+    agent: compliance-checker
+    version: ">=1.0.0"
+    required: false  # Optional for quick MRs
+    
+  auto_remediation:
+    agent: auto-remediation
+    version: ">=1.0.0"
+    required: false  # Only if fixes needed
+
+# Flow configuration
+configuration:
+  # Execution settings
+  execution:
+    parallel_where_possible: true
+    fail_fast: false
+    continue_on_errors: false
+    
+  # Security settings
+  security_level: high
+  require_critical_fix: true
+  auto_fix_enabled: false  # Require approval
+  
+  # Compliance settings
+  compliance_frameworks:
+    - gdpr
+    - soc2
+  skip_compliance_for_minor_changes: true
+  
+  # Notification settings
+  notifications:
+    on_start: false
+    on_complete: true
+    on_failure: true
+    on_critical_finding: true
+
+# Workflow orchestration
+workflow:
+  # Stage 1: Initial Assessment
+  - stage: assessment
+    name: "Initial Security Assessment"
+    description: "Analyze changes and determine security/compliance requirements"
+    
+    steps:
+      - name: analyze_changes
+        description: "Determine scope of changes"
+        action: analyze_diff
+        inputs:
+          - merge_request_diff
+        outputs:
+          - changed_files
+          - change_type
+          - risk_level
+          
+      - name: determine_requirements
+        description: "Decide what checks are needed"
+        action: evaluate_requirements
+        inputs:
+          - change_type
+          - risk_level
+          - target_branch
+        conditions:
+          security_scan: always
+          compliance_check: |
+            risk_level >= medium OR
+            target_branch in [main, production] OR
+            is_release_tag
+          auto_fix: |
+            critical_findings > 0 OR
+            high_findings > 3
+        outputs:
+          - required_agents
+          - scan_scope
+          
+    on_complete:
+      action: post_comment
+      message: |
+        🔒 Security Pipeline Started
+        
+        Changes detected: {changed_files_count} files
+        Risk level: {risk_level}
+        
+        Running:
+        - {security_scan_status}
+        - {compliance_check_status}
+        
+  # Stage 2: Security Scanning
+  - stage: security_scan
+    name: "Security Vulnerability Scan"
+    description: "Comprehensive security analysis using AI"
+    
+    depends_on:
+      - assessment
+      
+    agent: security_scanner
+    
+    inputs:
+      - changed_files
+      - merge_request_context
+      - project_dependencies
+      
+    configuration:
+      severity_threshold: medium
+      include_ai_analysis: true
+      generate_fix_suggestions: true
+      
+    outputs:
+      - security_findings
+      - severity_breakdown
+      - fix_recommendations
+      
+    on_complete:
+      action: post_comment
+      message: |
+        ## 🔍 Security Scan Complete
+        
+        **Findings:**
+        - 🔴 Critical: {critical_count}
+        - 🟠 High: {high_count}
+        - 🟡 Medium: {medium_count}
+        - 🔵 Low: {low_count}
+        
+        {findings_summary}
+        
+        {see_detailed_report}
+        
+    on_failure:
+      action: create_issue
+      title: "Security scan failed for MR !{mr_number}"
+      
+  # Stage 3: Compliance Verification
+  - stage: compliance_check
+    name: "Compliance Verification"
+    description: "Verify compliance with regulations and standards"
+    
+    depends_on:
+      - assessment
+      
+    condition: |
+      assessment.requires_compliance OR
+      target_branch in [main, production] OR
+      is_release
+      
+    agent: compliance_checker
+    
+    inputs:
+      - repository_files
+      - security_findings
+      - audit_logs
+      
+    configuration:
+      frameworks: {configured_frameworks}
+      strictness: balanced
+      generate_documentation: true
+      
+    outputs:
+      - compliance_status
+      - violations
+      - compliance_report
+      
+    on_complete:
+      action: post_comment
+      message: |
+        ## ✅ Compliance Check Complete
+        
+        **Status:**
+        - GDPR: {gdpr_status}
+        - SOC2: {soc2_status}
+        
+        {compliance_summary}
+        
+        {see_compliance_report}
+        
+  # Stage 4: Results Analysis
+  - stage: analysis
+    name: "AI-Powered Results Analysis"
+    description: "Claude analyzes all findings for context and priority"
+    
+    depends_on:
+      - security_scan
+      - compliance_check
+      
+    action: claude_analyze
+    
+    inputs:
+      - security_findings
+      - compliance_violations
+      - code_context
+      - business_context
+      
+    prompt: |
+      Analyze these security and compliance findings in context.
+      
+      ## Security Findings
+      {security_findings}
+      
+      ## Compliance Issues
+      {compliance_violations}
+      
+      ## Code Changes
+      {merge_request_diff}
+      
+      ## Business Context
+      Project: {project_name}
+      Target: {target_branch}
+      Author: {author}
+      
+      Provide:
+      1. Overall risk assessment
+      2. Prioritized action items
+      3. Findings that can be auto-fixed
+      4. Findings requiring manual review
+      5. Business impact summary
+      6. Recommendation: approve/fix/block
+      
+    outputs:
+      - risk_assessment
+      - prioritized_actions
+      - auto_fixable_issues
+      - blocking_issues
+      - recommendation
+      
+    on_complete:
+      action: post_comment
+      message: |
+        ## 🧠 AI Analysis Complete
+        
+        **Overall Risk:** {risk_level}
+        
+        **Recommendation:** {recommendation}
+        
+        {risk_summary}
+        
+        {action_items}
+        
+  # Stage 5: Conditional Auto-Fix
+  - stage: auto_fix
+    name: "Automated Security Fixes"
+    description: "Generate and apply security fixes"
+    
+    depends_on:
+      - analysis
+      
+    condition: |
+      auto_fixable_issues.count > 0 AND
+      (auto_fix_enabled OR severity_allows_auto_fix)
+      
+    agent: auto_remediation
+    
+    inputs:
+      - auto_fixable_issues
+      - code_context
+      - coding_standards
+      
+    configuration:
+      require_approval: true
+      generate_tests: true
+      create_separate_mr: true
+      
+    outputs:
+      - fix_merge_requests
+      - fixes_applied
+      - fixes_pending_approval
+      
+    on_complete:
+      action: post_comment
+      message: |
+        ## 🔧 Auto-Fix Complete
+        
+        **Fixes Generated:** {fixes_count}
+        
+        {fix_merge_requests_list}
+        
+        Please review and approve the automated fixes.
+        
+  # Stage 6: Final Decision
+  - stage: decision
+    name: "Merge Decision"
+    description: "Determine if MR should be approved or blocked"
+    
+    depends_on:
+      - security_scan
+      - compliance_check
+      - analysis
+      
+    action: evaluate_decision
+    
+    inputs:
+      - security_findings
+      - compliance_status
+      - risk_assessment
+      - fixes_applied
+      
+    decision_logic:
+      approve_if: |
+        (critical_count == 0 AND high_count == 0) OR
+        (all_critical_fixed AND all_high_fixed)
+        
+      block_if: |
+        (critical_count > 0 AND NOT all_fixes_applied) OR
+        (compliance_status == "non-compliant")
+        
+      warn_if: |
+        (medium_count > 5) OR
+        (compliance_status == "partial")
+        
+    outputs:
+      - merge_decision
+      - decision_reason
+      
+    on_complete:
+      action: post_comment
+      message: |
+        ## 🎯 Security Pipeline Complete
+        
+        **Decision:** {merge_decision_emoji} {merge_decision}
+        
+        {decision_reason}
+        
+        ---
+        
+        ### Summary
+        - Security: {security_status}
+        - Compliance: {compliance_status}
+        - Fixes: {fixes_status}
+        
+        ### Action Required
+        {required_actions}
+        
+        ---
+        
+        🤖 Powered by GitLab Security Guardian + Claude AI
+        
+  # Stage 7: Post-Merge Actions
+  - stage: post_merge
+    name: "Post-Merge Security Tasks"
+    description: "Actions to take after merge"
+    
+    condition: |
+      merge_request.state == "merged"
+      
+    depends_on:
+      - decision
+      
+    steps:
+      - name: update_security_dashboard
+        action: update_dashboard
+        inputs:
+          - security_findings
+          - compliance_status
+          
+      - name: create_audit_record
+        action: create_audit_log
+        inputs:
+          - security_scan_results
+          - compliance_report
+          - merge_decision
+          
+      - name: notify_team
+        action: send_notification
+        conditions:
+          - critical_findings_resolved
+          - compliance_issues_found
+        
+      - name: schedule_followup
+        action: create_issue
+        condition: |
+          pending_fixes.count > 0
+        title: "Follow-up: Security improvements for {project_name}"
+        description: |
+          Automated security scan found improvements that couldn't be auto-fixed.
+          
+          {pending_fixes_list}
+
+# Error handling
+error_handling:
+  on_agent_failure:
+    - log_error
+    - notify_team
+    - continue_with_partial_results
+    
+  on_timeout:
+    - save_partial_results
+    - notify_team
+    - create_issue
+    
+  retry_policy:
+    max_attempts: 2
+    backoff: exponential
+    retry_on:
+      - network_error
+      - rate_limit
+      - temporary_failure
+
+# Notifications
+notifications:
+  slack:
+    enabled: true
+    channel: "#security-alerts"
+    events:
+      - critical_finding
+      - compliance_violation
+      - auto_fix_created
+      
+  email:
+    enabled: true
+    recipients:
+      - security_team
+      - code_owner
+    events:
+      - pipeline_complete
+      - blocking_issue
+      
+  gitlab:
+    enabled: true
+    methods:
+      - merge_request_comment
+      - project_notification
+      - security_dashboard
+
+# Metrics and monitoring
+metrics:
+  track:
+    - pipeline_duration
+    - findings_count_by_severity
+    - auto_fix_success_rate
+    - false_positive_rate
+    - compliance_status
+    
+  dashboards:
+    - security_overview
+    - compliance_scorecard
+    - fix_efficiency
+    
+  alerts:
+    - critical_finding_detected
+    - compliance_violation
+    - auto_fix_failure
+
+# Performance optimization
+performance:
+  caching:
+    enabled: true
+    cache_duration: 3600
+    cache_keys:
+      - dependency_scan
+      - static_analysis
+      
+  parallel_execution:
+    enabled: true
+    max_parallel: 3
+    
+  resource_limits:
+    max_memory: 2GB
+    max_cpu: 2
+    timeout: 1800
+
+# Learning and improvement
+learning:
+  enabled: true
+  
+  track:
+    - false_positives
+    - fix_acceptance_rate
+    - compliance_gaps
+    - team_preferences
+    
+  adapt:
+    - severity_thresholds
+    - compliance_rules
+    - fix_strategies
+    - decision_logic
+    
+  improve:
+    - reduce_false_positives
+    - better_fix_quality
+    - faster_execution
+    - smarter_decisions
+
+# Reporting
+reporting:
+  # Generate comprehensive report
+  generate_report: true
+  
+  report_includes:
+    - executive_summary
+    - security_findings
+    - compliance_status
+    - fixes_applied
+    - metrics
+    - recommendations
+    
+  formats:
+    - markdown
+    - pdf
+    - json
+    
+  destinations:
+    - merge_request_comment
+    - wiki_page
+    - security_dashboard
+    - email
+
+# Integration points
+integrations:
+  # Claude AI (Anthropic)
+  anthropic:
+    enabled: true
+    model: claude-3-5-sonnet-20241022
+    use_for:
+      - security_analysis
+      - compliance_interpretation
+      - fix_generation
+      - risk_assessment
+      
+  # GitLab features
+  gitlab:
+    security_dashboard: true
+    compliance_dashboard: true
+    vulnerability_management: true
+    
+  # External tools
+  external:
+    - sast_tools
+    - dependency_scanners
+    - secret_detection
+
+---
+
+# Usage Examples
+
+## Example 1: Standard Merge Request
+```
+Trigger: merge_request_created
+Flow: assessment → security_scan → analysis → decision
+Result: Approve with 0 critical, 2 medium findings
+```
+
+## Example 2: Critical Vulnerability Found
+```
+Trigger: merge_request_updated
+Flow: assessment → security_scan → compliance_check → analysis → auto_fix → decision
+Result: Auto-fix MR created, original MR blocked until fix applied
+```
+
+## Example 3: Release Tag
+```
+Trigger: tag_created (v2.0.0)
+Flow: Full pipeline with all agents
+Result: Comprehensive security + compliance audit, documentation generated
+```
+
+## Example 4: Scheduled Audit
+```
+Trigger: scheduled (Monday 2 AM)
+Flow: security_scan → compliance_check → analysis → post_merge
+Result: Weekly security report, pending issues tracked
+```
