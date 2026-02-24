@@ -18,7 +18,7 @@ flake8>=6.1.0
 
 # Security scanning
 detect-secrets>=1.4.0
-truffleHog>=3.0.0
+trufflehog3>=3.0.0
 
 # Compliance frameworks
 pydantic>=2.0.0

@@ -9,7 +9,7 @@ import json
 from typing import List, Dict, Any, Optional
 from dataclasses import dataclass, asdict
 from enum import Enum
-import anthropic
+from openai import OpenAI
 
 
 class Severity(Enum):
@@ -51,18 +51,22 @@ class SecurityFinding:
 class SecurityScanner:
     """Main security scanner implementation"""
     
-    def __init__(self, anthropic_api_key: Optional[str] = None):
+    def __init__(self, api_key: Optional[str] = None):
         """
-        Initialize security scanner with Claude AI
+        Initialize security scanner with AI analysis
         
         Args:
-            anthropic_api_key: Anthropic API key (defaults to env var)
+            api_key: API key for AI provider (defaults to VENICE_API_KEY or OPENAI_API_KEY env var)
         """
-        self.api_key = anthropic_api_key or os.environ.get("ANTHROPIC_API_KEY")
+        self.api_key = api_key or os.environ.get("VENICE_API_KEY") or os.environ.get("OPENAI_API_KEY")
         if not self.api_key:
-            raise ValueError("Anthropic API key required")
+            raise ValueError("AI API key required (set VENICE_API_KEY or OPENAI_API_KEY)")
         
-        self.client = anthropic.Anthropic(api_key=self.api_key)
+        # Auto-detect provider
+        is_venice = not self.api_key.startswith("sk-")
+        base_url = "https://api.venice.ai/api/v1" if is_venice else None
+        self.model = "venice-uncensored" if is_venice else "gpt-4o"
+        self.client = OpenAI(api_key=self.api_key, base_url=base_url)
         self.findings: List[SecurityFinding] = []
         
         # Vulnerability patterns
@@ -217,18 +221,22 @@ Respond in JSON format:
 }}"""
 
         try:
-            response = self.client.messages.create(
-                model="claude-3-5-sonnet-20241022",
+            response = self.client.chat.completions.create(
+                model=self.model,
                 max_tokens=4000,
                 temperature=0.2,
-                messages=[{
-                    "role": "user",
-                    "content": prompt
-                }]
+                messages=[
+                    {"role": "system", "content": "You are a security expert. Always respond with valid JSON only, no markdown."},
+                    {"role": "user", "content": prompt}
+                ]
             )
             
-            # Parse Claude's response
-            result = json.loads(response.content[0].text)
+            # Parse AI response (strip markdown code blocks if present)
+            raw = response.choices[0].message.content.strip()
+            if raw.startswith("```"):
+                raw = raw.split("\n", 1)[1] if "\n" in raw else raw[3:]
+                raw = raw.rsplit("```", 1)[0].strip()
+            result = json.loads(raw)
             
             # Update findings with AI analysis
             for i, finding_analysis in enumerate(result.get("findings", [])):
